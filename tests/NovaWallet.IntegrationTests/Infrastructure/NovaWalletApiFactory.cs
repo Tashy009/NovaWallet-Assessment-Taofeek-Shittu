@@ -23,6 +23,8 @@ public sealed class NovaWalletApiFactory(string connectionString, TestClock cloc
         builder.UseSetting("Swagger:Enabled", "true");
         builder.UseSetting("DevAuth:Enabled", "true");
         builder.UseSetting("Jwt:SigningKey", "integration-tests-only-signing-key-0123456789abcdef");
+        // Concurrency tests deliberately fire 100 transfers per customer; RateLimitTests lowers this on its own host.
+        builder.UseSetting("RateLimiting:Transfers:PermitLimit", "100000");
 
         builder.ConfigureTestServices(services =>
         {

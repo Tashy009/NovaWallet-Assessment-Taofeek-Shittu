@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
 using NovaWallet.Api.Auth;
 using NovaWallet.Api.ExceptionHandling;
+using NovaWallet.Api.Observability;
+using NovaWallet.Api.RateLimiting;
 using NovaWallet.Application;
 using NovaWallet.Infrastructure;
 using NovaWallet.Infrastructure.Migrations;
@@ -40,8 +42,11 @@ builder.Services.AddProblemDetails(options =>
         context.ProblemDetails.Instance ??= context.HttpContext.Request.Path;
         context.ProblemDetails.Extensions["traceId"] =
             Activity.Current?.Id ?? context.HttpContext.TraceIdentifier;
+        context.ProblemDetails.Extensions["correlationId"] = CorrelationIdMiddleware.Get(context.HttpContext);
     };
 });
+
+builder.Services.AddTransferRateLimiting(builder.Configuration);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -66,9 +71,12 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
+// Order matters: correlation id wraps everything, and request logging sits outside the exception handler
+// so the logged status is the one the client actually received.
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseSerilogRequestLogging();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
-app.UseSerilogRequestLogging();
 
 if (app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
@@ -78,6 +86,7 @@ if (app.Configuration.GetValue<bool>("Swagger:Enabled"))
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
 app.MapHealthChecks("/health/ready", new HealthCheckOptions

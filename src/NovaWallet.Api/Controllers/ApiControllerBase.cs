@@ -1,8 +1,8 @@
-using System.Diagnostics;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using NovaWallet.Api.Auth;
+using NovaWallet.Api.Observability;
 using NovaWallet.Application.Common;
 
 namespace NovaWallet.Api.Controllers;
@@ -15,7 +15,7 @@ public abstract class ApiControllerBase : ControllerBase
 
     protected Caller CurrentCaller => User.ToCaller();
 
-    protected string CorrelationId => Activity.Current?.TraceId.ToString() ?? HttpContext.TraceIdentifier;
+    protected string CorrelationId => CorrelationIdMiddleware.Get(HttpContext);
 
     protected ObjectResult ErrorResult(AppError error)
     {

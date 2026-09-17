@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using NovaWallet.Api.Contracts;
+using NovaWallet.Api.RateLimiting;
 using NovaWallet.Application.Transfers;
 
 namespace NovaWallet.Api.Controllers;
@@ -9,7 +11,9 @@ namespace NovaWallet.Api.Controllers;
 public sealed class TransfersController(ITransferService transferService) : ApiControllerBase
 {
     [HttpPost]
+    [EnableRateLimiting(RateLimitingSetup.TransfersPolicy)]
     [ProducesResponseType<TransferResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
