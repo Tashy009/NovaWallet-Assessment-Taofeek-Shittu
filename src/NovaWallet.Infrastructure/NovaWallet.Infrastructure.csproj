@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\NovaWallet.Application\NovaWallet.Application.csproj" />
+    <ProjectReference Include="..\NovaWallet.Domain\NovaWallet.Domain.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="dbup-postgresql" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Migrations ship inside the assembly so the container needs no extra files. -->
+    <EmbeddedResource Include="Migrations\Scripts\*.sql" />
+  </ItemGroup>
+</Project>
