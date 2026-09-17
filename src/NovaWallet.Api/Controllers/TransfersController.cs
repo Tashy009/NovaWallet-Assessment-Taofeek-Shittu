@@ -6,7 +6,7 @@ namespace NovaWallet.Api.Controllers;
 
 [Route("api/v1/transfers")]
 [Tags("Transfers")]
-public sealed class TransfersController(TransferService transferService) : ApiControllerBase
+public sealed class TransfersController(ITransferService transferService) : ApiControllerBase
 {
     [HttpPost]
     [ProducesResponseType<TransferResponse>(StatusCodes.Status201Created)]

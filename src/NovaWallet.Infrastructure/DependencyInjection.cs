@@ -5,6 +5,7 @@ using Npgsql;
 using NovaWallet.Application.Abstractions;
 using NovaWallet.Infrastructure.Migrations;
 using NovaWallet.Infrastructure.Persistence;
+using NovaWallet.Infrastructure.Persistence.Ledger;
 
 namespace NovaWallet.Infrastructure;
 

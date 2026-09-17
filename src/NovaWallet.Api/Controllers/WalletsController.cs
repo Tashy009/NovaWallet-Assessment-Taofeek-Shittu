@@ -9,7 +9,7 @@ namespace NovaWallet.Api.Controllers;
 
 [Route("api/v1/wallets")]
 [Tags("Wallets")]
-public sealed class WalletsController(WalletService walletService, CreditService creditService) : ApiControllerBase
+public sealed class WalletsController(IWalletService walletService, ICreditService creditService) : ApiControllerBase
 {
     [HttpPost]
     [ProducesResponseType<WalletResponse>(StatusCodes.Status201Created)]

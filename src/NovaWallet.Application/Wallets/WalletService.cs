@@ -4,18 +4,7 @@ using NovaWallet.Domain;
 
 namespace NovaWallet.Application.Wallets;
 
-public sealed record WalletView(
-    Guid WalletId,
-    string CustomerId,
-    string Currency,
-    long BalanceKobo,
-    long DailyOutboundLimitKobo,
-    string Status,
-    DateTimeOffset CreatedAt);
-
-public sealed record BalanceView(Guid WalletId, string Currency, long BalanceKobo);
-
-public sealed class WalletService(IWalletStore wallets)
+public sealed class WalletService(IWalletStore wallets) : IWalletService
 {
     public async Task<Result<WalletView>> CreateAsync(Caller caller, CancellationToken cancellationToken)
     {
@@ -24,7 +13,8 @@ public sealed class WalletService(IWalletStore wallets)
 
         if (created is not null)
         {
-            return ToView(created);
+            return new WalletView(created.Id, created.CustomerId, created.Currency, created.BalanceKobo,
+                created.DailyOutboundLimitKobo, created.Status, UtcTime.From(created.CreatedAt));
         }
 
         var existing = await wallets.FindByCustomerAsync(caller.CustomerId, Currency.Ngn, cancellationToken)
@@ -45,11 +35,4 @@ public sealed class WalletService(IWalletStore wallets)
 
         return new BalanceView(wallet.Id, wallet.Currency, wallet.BalanceKobo);
     }
-
-    private static WalletView ToView(WalletSnapshot wallet) =>
-        new(wallet.Id, wallet.CustomerId, wallet.Currency, wallet.BalanceKobo, wallet.DailyOutboundLimitKobo,
-            wallet.Status, Utc(wallet.CreatedAt));
-
-    internal static DateTimeOffset Utc(DateTime value) =>
-        new(DateTime.SpecifyKind(value, DateTimeKind.Utc));
 }
