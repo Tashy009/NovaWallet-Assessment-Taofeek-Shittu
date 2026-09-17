@@ -4,6 +4,7 @@ namespace NovaWallet.UnitTests;
 
 public class BusinessDayTests
 {
+    // Midnight WAT: UTC instants map to the correct Africa/Lagos calendar date.
     [Theory]
     // WAT = UTC+1, so the Lagos business day flips at 23:00:00 UTC.
     [InlineData("2026-08-24T22:59:59Z", "2026-08-24")]
@@ -17,6 +18,7 @@ public class BusinessDayTests
         Assert.Equal(DateOnly.Parse(expectedDate, System.Globalization.CultureInfo.InvariantCulture), BusinessDay.For(instant));
     }
 
+    // Midnight WAT: the business date does not depend on the time zone of the input.
     [Fact]
     public void For_is_independent_of_the_offset_the_instant_was_expressed_in()
     {

@@ -100,6 +100,13 @@ public static class LedgerAssertions
         return problem.TryGetProperty("errorCode", out var code) ? code.GetString() : null;
     }
 
+    // There is no freeze API, so tests freeze wallets directly in the database.
+    public static async Task FreezeWalletAsync(PostgresDatabase database, Guid walletId)
+    {
+        await using var connection = await database.OpenConnectionAsync();
+        await connection.ExecuteAsync("UPDATE wallets SET status = 'FROZEN' WHERE id = @walletId", new { walletId });
+    }
+
     public static async Task<long> CountAsync(PostgresDatabase database, string sql, object parameters)
     {
         await using var connection = await database.OpenConnectionAsync();

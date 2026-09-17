@@ -10,6 +10,7 @@ namespace NovaWallet.IntegrationTests;
 [Collection(ApiCollection.Name)]
 public class TransferTests(ApiFixture fixture)
 {
+    // T1/B3: a transfer debits and credits atomically with two entries and two audit records.
     [Fact]
     public async Task Successful_transfer_moves_funds_atomically_with_entries_and_audit()
     {
@@ -34,6 +35,7 @@ public class TransferTests(ApiFixture fixture)
         await AssertWalletLedgerConsistentAsync(fixture.Database, destination);
     }
 
+    // T2: transferring the exact balance leaves zero.
     [Fact]
     public async Task Exact_balance_transfer_leaves_zero()
     {
@@ -46,6 +48,7 @@ public class TransferTests(ApiFixture fixture)
         Assert.Equal(0, await GetBalanceAsync(sender, source));
     }
 
+    // T3/A3: insufficient funds is rejected with no partial movement and no audit records.
     [Fact]
     public async Task Insufficient_funds_returns_422_and_moves_nothing()
     {
@@ -60,8 +63,12 @@ public class TransferTests(ApiFixture fixture)
         Assert.Equal(0, await GetBalanceAsync(recipient, destination));
         Assert.Equal(0, await CountAsync(fixture.Database,
             "SELECT count(*) FROM ledger_transactions WHERE source_wallet_id = @source", new { source }));
+        Assert.Equal(0, await CountAsync(fixture.Database,
+            "SELECT count(*) FROM audit_log WHERE (wallet_id = @source AND action = 'WALLET_DEBITED') OR wallet_id = @destination",
+            new { source, destination }));
     }
 
+    // T8: an unknown destination returns 404 and moves nothing.
     [Fact]
     public async Task Unknown_destination_returns_404_and_moves_nothing()
     {
@@ -74,6 +81,7 @@ public class TransferTests(ApiFixture fixture)
         Assert.Equal(5_000, await GetBalanceAsync(sender, source));
     }
 
+    // T11/IDOR: a customer cannot transfer from someone else's wallet.
     [Fact]
     public async Task Cannot_transfer_from_a_wallet_the_caller_does_not_own()
     {
@@ -88,6 +96,7 @@ public class TransferTests(ApiFixture fixture)
         Assert.Equal(0, await GetBalanceAsync(thief, thiefWallet));
     }
 
+    // T6: self-transfer is rejected.
     [Fact]
     public async Task Source_equal_to_destination_returns_400()
     {
@@ -99,6 +108,7 @@ public class TransferTests(ApiFixture fixture)
         Assert.Equal(5_000, await GetBalanceAsync(sender, source));
     }
 
+    // T4/T5: zero and negative amounts are rejected.
     [Theory]
     [InlineData(0)]
     [InlineData(-500)]
@@ -113,6 +123,7 @@ public class TransferTests(ApiFixture fixture)
         Assert.Equal(5_000, await GetBalanceAsync(sender, source));
     }
 
+    // Idempotency: a transfer without an Idempotency-Key is rejected.
     [Fact]
     public async Task Missing_idempotency_key_returns_400()
     {
@@ -125,6 +136,7 @@ public class TransferTests(ApiFixture fixture)
         Assert.Equal(5_000, await GetBalanceAsync(sender, source));
     }
 
+    // T12: a non-NGN currency is rejected.
     [Fact]
     public async Task Non_ngn_currency_returns_400()
     {
@@ -141,5 +153,36 @@ public class TransferTests(ApiFixture fixture)
         var response = await sender.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    // T7: an unknown source wallet is reported as not found.
+    [Fact]
+    public async Task Unknown_source_returns_404_and_moves_nothing()
+    {
+        var (recipient, destination) = await CreateFundedWalletAsync(fixture, 0);
+
+        var response = await TransferAsync(recipient, Guid.NewGuid(), destination, 1_000);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("source_wallet_not_found", await ErrorCodeAsync(response));
+        Assert.Equal(0, await GetBalanceAsync(recipient, destination));
+    }
+
+    // T9/T10: a frozen source or destination blocks the transfer and nothing moves.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Frozen_source_or_destination_returns_422_and_moves_nothing(bool freezeSource)
+    {
+        var (sender, source) = await CreateFundedWalletAsync(fixture, 5_000);
+        var (recipient, destination) = await CreateFundedWalletAsync(fixture, 0);
+        await FreezeWalletAsync(fixture.Database, freezeSource ? source : destination);
+
+        var response = await TransferAsync(sender, source, destination, 1_000);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal("wallet_not_active", await ErrorCodeAsync(response));
+        Assert.Equal(5_000, await GetBalanceAsync(sender, source));
+        Assert.Equal(0, await GetBalanceAsync(recipient, destination));
     }
 }

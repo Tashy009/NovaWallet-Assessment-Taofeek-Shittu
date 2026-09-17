@@ -4,6 +4,7 @@ namespace NovaWallet.UnitTests;
 
 public class StatementCursorTests
 {
+    // S3: a cursor round-trips to the same entry number.
     [Theory]
     [InlineData(1)]
     [InlineData(987_654_321)]
@@ -17,6 +18,7 @@ public class StatementCursorTests
         Assert.DoesNotContain('=', cursor);
     }
 
+    // S7: malformed or tampered cursors are rejected.
     [Theory]
     [InlineData(null)]
     [InlineData("")]

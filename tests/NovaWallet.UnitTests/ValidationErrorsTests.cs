@@ -4,6 +4,7 @@ namespace NovaWallet.UnitTests;
 
 public class ValidationErrorsTests
 {
+    // C2-C5: amounts must be positive and within the transaction cap, including long extremes.
     [Theory]
     [InlineData(1, true)]
     [InlineData(1_000_000_000_000, true)]
@@ -21,6 +22,7 @@ public class ValidationErrorsTests
         Assert.Equal(valid, !errors.HasErrors);
     }
 
+    // Input: external references reject missing or unsafe values.
     [Theory]
     [InlineData("NIP-000123:abc_1.2", true)]
     [InlineData(null, false)]
@@ -37,6 +39,7 @@ public class ValidationErrorsTests
         Assert.Equal(valid, !errors.HasErrors);
     }
 
+    // Oversized input: references longer than 64 characters are rejected.
     [Fact]
     public void Reference_longer_than_64_characters_is_rejected()
     {
@@ -47,6 +50,7 @@ public class ValidationErrorsTests
         Assert.True(errors.HasErrors);
     }
 
+    // Input: narrations reject control characters.
     [Theory]
     [InlineData(null, true)]
     [InlineData("School fees", true)]
@@ -60,6 +64,7 @@ public class ValidationErrorsTests
         Assert.Equal(valid, !errors.HasErrors);
     }
 
+    // Errors: validation messages are grouped by field.
     [Fact]
     public void ToError_groups_messages_by_field()
     {

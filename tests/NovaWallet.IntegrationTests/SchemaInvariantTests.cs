@@ -9,6 +9,7 @@ namespace NovaWallet.IntegrationTests;
 [Collection(ApiCollection.Name)]
 public class SchemaInvariantTests(ApiFixture fixture)
 {
+    // Deployment: migrations are applied once and rerunning them is a no-op.
     [Fact]
     public async Task Migrations_are_applied_once_and_rerunning_is_a_no_op()
     {
@@ -22,6 +23,7 @@ public class SchemaInvariantTests(ApiFixture fixture)
         Assert.Equal(1, applied);
     }
 
+    // DB invariant: balance >= 0 is enforced by the database.
     [Fact]
     public async Task Wallet_balance_cannot_go_negative()
     {
@@ -34,6 +36,7 @@ public class SchemaInvariantTests(ApiFixture fixture)
         Assert.Equal(100, await connection.ExecuteScalarAsync<long>("SELECT balance_kobo FROM wallets WHERE id = @walletId", new { walletId }));
     }
 
+    // DB invariant: wallet currency must be NGN.
     [Fact]
     public async Task Wallet_currency_must_be_ngn()
     {
@@ -45,6 +48,7 @@ public class SchemaInvariantTests(ApiFixture fixture)
                 new { id = Guid.NewGuid(), customerId = NewCustomerId() }));
     }
 
+    // DB invariant: one NGN wallet per customer.
     [Fact]
     public async Task Customer_cannot_have_two_ngn_wallets()
     {
@@ -56,6 +60,7 @@ public class SchemaInvariantTests(ApiFixture fixture)
             InsertWalletAsync(connection, customerId: customerId));
     }
 
+    // DB invariant: transfer source and destination must differ.
     [Fact]
     public async Task Transfer_to_the_same_wallet_is_rejected()
     {
@@ -66,6 +71,7 @@ public class SchemaInvariantTests(ApiFixture fixture)
             InsertTransactionAsync(connection, "TRANSFER", 100, sourceWalletId: walletId, destinationWalletId: walletId));
     }
 
+    // DB invariant: a credit has no source wallet.
     [Fact]
     public async Task Credit_with_a_source_wallet_is_rejected()
     {
@@ -77,6 +83,7 @@ public class SchemaInvariantTests(ApiFixture fixture)
             InsertTransactionAsync(connection, "CREDIT", 100, sourceWalletId: source, destinationWalletId: destination));
     }
 
+    // DB invariant: transaction amounts must be positive.
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -89,6 +96,7 @@ public class SchemaInvariantTests(ApiFixture fixture)
             InsertTransactionAsync(connection, "CREDIT", amountKobo, sourceWalletId: null, destinationWalletId: walletId));
     }
 
+    // DB invariant: an external reference can be posted only once.
     [Fact]
     public async Task Same_external_reference_cannot_be_credited_twice()
     {
@@ -102,6 +110,7 @@ public class SchemaInvariantTests(ApiFixture fixture)
             InsertTransactionAsync(connection, "CREDIT", 100, null, walletId, externalReference: reference));
     }
 
+    // DB invariant: the daily outbound total cannot be negative.
     [Fact]
     public async Task Daily_outbound_total_cannot_be_negative()
     {
@@ -114,6 +123,7 @@ public class SchemaInvariantTests(ApiFixture fixture)
                 new { walletId }));
     }
 
+    // A7: audit rows must satisfy after = before +/- amount.
     [Fact]
     public async Task Audit_row_must_be_arithmetically_consistent()
     {
@@ -125,6 +135,7 @@ public class SchemaInvariantTests(ApiFixture fixture)
             InsertAuditAsync(connection, transactionId, walletId, "WALLET_CREDITED", amountKobo: 100, before: 0, after: 150));
     }
 
+    // A4/A5: UPDATE and DELETE on audit, entries and transactions are blocked.
     [Theory]
     [InlineData("UPDATE audit_log SET amount_kobo = amount_kobo + 1 WHERE transaction_id = @transactionId")]
     [InlineData("DELETE FROM audit_log WHERE transaction_id = @transactionId")]
@@ -151,6 +162,7 @@ public class SchemaInvariantTests(ApiFixture fixture)
         Assert.Contains("append-only", ex.MessageText);
     }
 
+    // A6: TRUNCATE on append-only tables is blocked.
     [Theory]
     [InlineData("audit_log")]
     [InlineData("ledger_entries")]
@@ -162,6 +174,32 @@ public class SchemaInvariantTests(ApiFixture fixture)
 
         await AssertRejectedAsync(PostgresErrorCodes.RestrictViolation, constraint: null, () =>
             connection.ExecuteAsync($"TRUNCATE {table} CASCADE", transaction: transaction));
+    }
+
+    // DB invariant: a transfer must have a source wallet.
+    [Fact]
+    public async Task Transfer_without_a_source_wallet_is_rejected()
+    {
+        await using var connection = await fixture.Database.OpenConnectionAsync();
+        var walletId = await InsertWalletAsync(connection);
+
+        await AssertRejectedAsync(PostgresErrorCodes.CheckViolation, "ck_ledger_transactions_shape", () =>
+            InsertTransactionAsync(connection, "TRANSFER", 100, sourceWalletId: null, destinationWalletId: walletId));
+    }
+
+    // DB invariant: an idempotency key can be stored only once per customer and operation.
+    [Fact]
+    public async Task Same_idempotency_key_cannot_be_stored_twice()
+    {
+        await using var connection = await fixture.Database.OpenConnectionAsync();
+        var parameters = new { customerId = NewCustomerId(), key = Guid.NewGuid().ToString("N"), hash = new string('a', 64) };
+        const string sql = """
+            INSERT INTO idempotency_keys (customer_id, operation, idempotency_key, request_hash)
+            VALUES (@customerId, 'TRANSFER', @key, @hash)
+            """;
+        await connection.ExecuteAsync(sql, parameters);
+
+        await AssertRejectedAsync(PostgresErrorCodes.UniqueViolation, "pk_idempotency_keys", () => connection.ExecuteAsync(sql, parameters));
     }
 
     private static string NewCustomerId() => $"cust-{Guid.NewGuid():N}";

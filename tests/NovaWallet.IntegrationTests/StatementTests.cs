@@ -9,6 +9,7 @@ namespace NovaWallet.IntegrationTests;
 [Collection(ApiCollection.Name)]
 public class StatementTests(ApiFixture fixture)
 {
+    // S2: the statement lists credits and transfers newest first with counterparties.
     [Fact]
     public async Task Statement_lists_credits_and_transfers_newest_first_with_counterparties()
     {
@@ -38,6 +39,7 @@ public class StatementTests(ApiFixture fixture)
         Assert.Equal(("CREDIT", 30_000L, source), (received.Direction, received.AmountKobo, received.CounterpartyWalletId));
     }
 
+    // S1/S3: pages cover every entry exactly once with no duplicates or gaps.
     [Fact]
     public async Task Pages_cover_every_entry_exactly_once_in_descending_order()
     {
@@ -65,6 +67,7 @@ public class StatementTests(ApiFixture fixture)
         Assert.Equal(Enumerable.Range(1, 25).Reverse().Select(i => (long)i), amounts);
     }
 
+    // S3: new entries arriving between pages do not shift later pages.
     [Fact]
     public async Task New_entries_arriving_between_pages_do_not_shift_later_pages()
     {
@@ -83,6 +86,7 @@ public class StatementTests(ApiFixture fixture)
         Assert.Equal([3L, 2L, 1L], second!.Items.Select(i => i.AmountKobo));
     }
 
+    // Statement: an empty wallet returns an empty page with no cursor.
     [Fact]
     public async Task Empty_wallet_returns_empty_page()
     {
@@ -94,6 +98,7 @@ public class StatementTests(ApiFixture fixture)
         Assert.Null(page.NextCursor);
     }
 
+    // S8/IDOR: another customer's statement is reported as not found.
     [Fact]
     public async Task Another_customers_statement_is_not_found()
     {
@@ -105,15 +110,49 @@ public class StatementTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    // S5/S6/S7: an invalid limit or cursor returns 400.
     [Theory]
     [InlineData("?limit=0")]
     [InlineData("?limit=101")]
+    [InlineData("?limit=-1")]
+    [InlineData("?limit=10000")]
+    [InlineData("?limit=abc")]
     [InlineData("?cursor=garbage")]
     public async Task Invalid_paging_parameters_return_400(string query)
     {
         var (owner, walletId) = await CreateFundedWalletAsync(fixture, 0);
 
         var response = await owner.GetAsync($"/api/v1/wallets/{walletId}/transactions{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    // S4: when the entries fill exactly one page there is no next cursor.
+    [Fact]
+    public async Task Exactly_full_page_has_no_next_cursor()
+    {
+        var (owner, walletId) = await CreateFundedWalletAsync(fixture, 0);
+        using var settlement = fixture.CreateSettlementClient();
+        for (var i = 1; i <= 10; i++)
+        {
+            (await settlement.PostAsJsonAsync($"/api/v1/wallets/{walletId}/credits",
+                new CreditWalletRequest(i, $"NIP-{Guid.NewGuid():N}", null))).EnsureSuccessStatusCode();
+        }
+
+        var page = await owner.GetFromJsonAsync<StatementResponse>($"/api/v1/wallets/{walletId}/transactions?limit=10");
+
+        Assert.Equal(10, page!.Items.Count);
+        Assert.Null(page.NextCursor);
+    }
+
+    // S7/Oversized input: a huge cursor is rejected with a structured 400.
+    [Fact]
+    public async Task Oversized_cursor_returns_400()
+    {
+        var (owner, walletId) = await CreateFundedWalletAsync(fixture, 0);
+
+        var response = await owner.GetAsync($"/api/v1/wallets/{walletId}/transactions?cursor={new string('A', 4_000)}");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);

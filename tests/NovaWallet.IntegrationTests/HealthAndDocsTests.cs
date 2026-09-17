@@ -6,6 +6,7 @@ namespace NovaWallet.IntegrationTests;
 [Collection(ApiCollection.Name)]
 public class HealthAndDocsTests(ApiFixture fixture)
 {
+    // Deployment: the liveness probe responds.
     [Fact]
     public async Task Liveness_returns_200()
     {
@@ -16,6 +17,7 @@ public class HealthAndDocsTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    // Deployment: the readiness probe succeeds when PostgreSQL is reachable.
     [Fact]
     public async Task Readiness_returns_200_when_database_is_reachable()
     {
@@ -26,6 +28,7 @@ public class HealthAndDocsTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    // Deployment: the OpenAPI document is served.
     [Fact]
     public async Task OpenApi_document_is_served()
     {
@@ -37,6 +40,7 @@ public class HealthAndDocsTests(ApiFixture fixture)
         Assert.Contains("NovaWallet Ledger Service", await response.Content.ReadAsStringAsync());
     }
 
+    // Errors: unknown routes still return problem details.
     [Fact]
     public async Task Unknown_route_returns_problem_details()
     {

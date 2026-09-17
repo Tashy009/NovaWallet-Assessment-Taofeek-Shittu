@@ -15,6 +15,7 @@ public class OutboxTests(ApiFixture fixture)
 {
     private sealed record OutboxRow(Guid Id, Guid AggregateId, string Payload, DateTime? PublishedAt, int Attempts, string? LastError, DateTime NextAttemptAt);
 
+    // Outbox: a committed transfer writes one event without narration or balances.
     [Fact]
     public async Task Committed_transfer_writes_exactly_one_transfer_completed_event_with_minimal_payload()
     {
@@ -41,6 +42,7 @@ public class OutboxTests(ApiFixture fixture)
         Assert.False(payload.TryGetProperty("sourceBalanceAfterKobo", out _));
     }
 
+    // Outbox: a rejected transfer writes no event.
     [Fact]
     public async Task Rejected_transfer_writes_no_event()
     {
@@ -53,6 +55,7 @@ public class OutboxTests(ApiFixture fixture)
         Assert.Equal(0, await CountEventsFromSourceAsync(source));
     }
 
+    // Outbox: idempotent replays do not write extra events.
     [Fact]
     public async Task Idempotent_replays_do_not_write_additional_events()
     {
@@ -65,6 +68,7 @@ public class OutboxTests(ApiFixture fixture)
         Assert.Equal(1, await CountEventsFromSourceAsync(source));
     }
 
+    // Outbox: under concurrency only committed transfers produce events.
     [Fact]
     public async Task Concurrent_overspend_attempts_produce_one_event_per_committed_transfer()
     {
@@ -77,6 +81,7 @@ public class OutboxTests(ApiFixture fixture)
         Assert.Equal(10, await CountEventsFromSourceAsync(source));
     }
 
+    // Outbox: the relay publishes each pending event once and marks it published.
     [Fact]
     public async Task Relay_publishes_pending_events_once_and_marks_them_published()
     {
@@ -93,6 +98,7 @@ public class OutboxTests(ApiFixture fixture)
         Assert.Equal(row.Id, published.EventId);
     }
 
+    // Outbox: a failed publish is retried after backoff and then delivered.
     [Fact]
     public async Task Failed_publish_is_retried_later_with_backoff_and_then_delivered()
     {
@@ -130,6 +136,7 @@ public class OutboxTests(ApiFixture fixture)
         Assert.Single(fixture.Publisher.Published, e => e.AggregateId == transactionId);
     }
 
+    // Outbox: concurrent relays never publish the same event twice.
     [Fact]
     public async Task Concurrent_relays_never_publish_the_same_event_twice()
     {
