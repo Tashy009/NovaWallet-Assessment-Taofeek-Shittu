@@ -1,10 +1,11 @@
+using Microsoft.Extensions.Logging;
 using NovaWallet.Application.Abstractions;
 using NovaWallet.Application.Common;
 using NovaWallet.Domain;
 
 namespace NovaWallet.Application.Statements;
 
-public sealed class StatementService(IWalletStore wallets, IStatementReader reader) : IStatementService
+public sealed class StatementService(IWalletStore wallets, IStatementReader reader, ILogger<StatementService> logger) : IStatementService
 {
     public const int DefaultLimit = 20;
     public const int MaxLimit = 100;
@@ -33,6 +34,12 @@ public sealed class StatementService(IWalletStore wallets, IStatementReader read
         var wallet = await wallets.FindAsync(walletId, cancellationToken);
         if (wallet is null || wallet.CustomerId != caller.CustomerId)
         {
+            if (wallet is not null)
+            {
+                logger.LogWarning("Customer {CustomerId} requested statement of wallet {WalletId} owned by another customer",
+                    caller.CustomerId, walletId);
+            }
+
             return Errors.WalletNotFound();
         }
 

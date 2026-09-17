@@ -17,6 +17,8 @@ public sealed class ApiFixture : IAsyncLifetime
 
     public TestClock Clock { get; } = new();
 
+    public RecordingEventPublisher Publisher { get; } = new();
+
     public static string NewCustomerId() => $"cust-{Guid.NewGuid():N}";
 
     public HttpClient CreateClient(string customerId, params string[] scopes)
@@ -33,7 +35,7 @@ public sealed class ApiFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _database = await PostgresDatabase.CreateAsync();
-        _factory = new NovaWalletApiFactory(_database.ConnectionString, Clock);
+        _factory = new NovaWalletApiFactory(_database.ConnectionString, Clock, Publisher);
 
         // Force host start-up now so migrations run once, before any test.
         _ = _factory.Server;

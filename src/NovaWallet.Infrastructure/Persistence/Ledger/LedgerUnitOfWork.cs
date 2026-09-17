@@ -32,6 +32,8 @@ internal sealed class LedgerUnitOfWork(DbSession session) : ILedgerUnitOfWork
 
     public ILedgerJournal Journal { get; } = new LedgerJournal(session);
 
+    public IOutbox Outbox { get; } = new OutboxWriter(session);
+
     public Task CommitAsync(CancellationToken cancellationToken) =>
         DbSession.Guarded(async () =>
         {

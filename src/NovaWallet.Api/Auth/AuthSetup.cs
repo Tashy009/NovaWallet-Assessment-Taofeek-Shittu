@@ -50,7 +50,9 @@ public static class AuthSetup
         services.AddAuthorizationBuilder()
             .AddPolicy(AuthPolicies.Customer, policy => policy
                 .RequireAuthenticatedUser()
-                .RequireClaim("sub"))
+                // Must fit customer_id varchar(128); an identity provider's oversized subject is rejected, not a 500.
+                .RequireAssertion(context => context.User.FindFirst("sub")?.Value is { Length: > 0 and <= 128 } sub
+                    && !string.IsNullOrWhiteSpace(sub)))
             .AddPolicy(AuthPolicies.PostCredits, policy => policy
                 .RequireAuthenticatedUser()
                 .RequireAssertion(context => context.User.GetScopes().Contains(LedgerScopes.PostCredits)));

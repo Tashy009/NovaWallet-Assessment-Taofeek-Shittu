@@ -16,6 +16,8 @@ public interface ILedgerUnitOfWork : IAsyncDisposable
 
     ILedgerJournal Journal { get; }
 
+    IOutbox Outbox { get; }
+
     Task CommitAsync(CancellationToken cancellationToken);
 }
 

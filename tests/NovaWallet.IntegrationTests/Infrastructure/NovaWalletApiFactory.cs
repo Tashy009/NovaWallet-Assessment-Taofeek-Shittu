@@ -13,7 +13,8 @@ public sealed class TestClock : TimeProvider
     public override DateTimeOffset GetUtcNow() => FixedUtcNow ?? base.GetUtcNow();
 }
 
-public sealed class NovaWalletApiFactory(string connectionString, TestClock clock) : WebApplicationFactory<Program>
+public sealed class NovaWalletApiFactory(string connectionString, TestClock clock, RecordingEventPublisher publisher)
+    : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -25,11 +26,15 @@ public sealed class NovaWalletApiFactory(string connectionString, TestClock cloc
         builder.UseSetting("Jwt:SigningKey", "integration-tests-only-signing-key-0123456789abcdef");
         // Concurrency tests deliberately fire 100 transfers per customer; RateLimitTests lowers this on its own host.
         builder.UseSetting("RateLimiting:Transfers:PermitLimit", "100000");
+        // Tests drive the relay explicitly so outbox assertions are deterministic.
+        builder.UseSetting("Outbox:RelayEnabled", "false");
 
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(clock);
+            services.RemoveAll<NovaWallet.Application.Abstractions.IEventPublisher>();
+            services.AddSingleton<NovaWallet.Application.Abstractions.IEventPublisher>(publisher);
         });
     }
 }

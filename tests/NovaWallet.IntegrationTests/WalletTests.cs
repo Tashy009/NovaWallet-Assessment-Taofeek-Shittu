@@ -100,6 +100,16 @@ public class WalletTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task Validly_signed_token_with_oversized_subject_is_forbidden_not_a_server_error()
+    {
+        using var client = fixture.CreateClient(new string('x', 129));
+
+        var response = await client.PostAsync("/api/v1/wallets", content: null);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Non_guid_wallet_id_returns_404()
     {
         using var client = fixture.CreateClient(ApiFixture.NewCustomerId());

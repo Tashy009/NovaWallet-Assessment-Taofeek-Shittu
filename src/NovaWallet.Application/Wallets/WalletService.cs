@@ -1,10 +1,11 @@
+using Microsoft.Extensions.Logging;
 using NovaWallet.Application.Abstractions;
 using NovaWallet.Application.Common;
 using NovaWallet.Domain;
 
 namespace NovaWallet.Application.Wallets;
 
-public sealed class WalletService(IWalletStore wallets) : IWalletService
+public sealed class WalletService(IWalletStore wallets, ILogger<WalletService> logger) : IWalletService
 {
     public async Task<Result<WalletView>> CreateAsync(Caller caller, CancellationToken cancellationToken)
     {
@@ -30,6 +31,12 @@ public sealed class WalletService(IWalletStore wallets) : IWalletService
         // Another customer's wallet is reported as not found so wallet ids cannot be probed.
         if (wallet is null || wallet.CustomerId != caller.CustomerId)
         {
+            if (wallet is not null)
+            {
+                logger.LogWarning("Customer {CustomerId} requested balance of wallet {WalletId} owned by another customer",
+                    caller.CustomerId, walletId);
+            }
+
             return Errors.WalletNotFound();
         }
 

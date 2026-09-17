@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using NovaWallet.Api.Observability;
 using NovaWallet.Application.Abstractions;
 
 namespace NovaWallet.Api.ExceptionHandling;
@@ -27,6 +28,7 @@ public sealed class LedgerExceptionHandler(IProblemDetailsService problemDetails
             logger.LogWarning("Request rolled back: {ErrorCode}", code);
         }
 
+        RequestLogEnricher.SetErrorCode(httpContext, code);
         httpContext.Response.StatusCode = status;
         if (status == StatusCodes.Status503ServiceUnavailable)
         {

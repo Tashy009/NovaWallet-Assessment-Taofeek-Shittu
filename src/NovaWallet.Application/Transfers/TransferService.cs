@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NovaWallet.Application.Abstractions;
 using NovaWallet.Application.Common;
 using NovaWallet.Domain;
@@ -7,7 +8,8 @@ namespace NovaWallet.Application.Transfers;
 public sealed class TransferService(
     ILedgerUnitOfWorkFactory unitOfWork,
     IConcurrencyRetryPolicy retryPolicy,
-    TimeProvider timeProvider) : ITransferService
+    TimeProvider timeProvider,
+    ILogger<TransferService> logger) : ITransferService
 {
     public const string Operation = "TRANSFER";
 
@@ -72,10 +74,16 @@ public sealed class TransferService(
         return new TransferOutcome(receipt, null, Replayed: false);
     }
 
-    private static AppError? CheckWallets(Caller caller, LockedWallet? source, LockedWallet? destination)
+    private AppError? CheckWallets(Caller caller, LockedWallet? source, LockedWallet? destination)
     {
         if (source is null || source.CustomerId != caller.CustomerId)
         {
+            if (source is not null)
+            {
+                logger.LogWarning("Customer {CustomerId} attempted transfer from wallet {WalletId} owned by another customer",
+                    caller.CustomerId, source.Id);
+            }
+
             return Errors.SourceWalletNotFound();
         }
 
@@ -129,6 +137,12 @@ public sealed class TransferService(
         // Only the sender's balance is returned; the recipient's balance is not the sender's data.
         var receipt = new TransferReceipt(transactionId, source.Id, destination.Id, Currency.Ngn, amount, sourceAfter,
             command.Narration, businessDate, UtcTime.From(createdAt));
+
+        // Same transaction as the ledger writes: the event exists if and only if the transfer commits.
+        await uow.Outbox.AddAsync(
+            new TransferCompletedEvent(Guid.NewGuid(), transactionId, source.Id, destination.Id, amount, Currency.Ngn,
+                businessDate, receipt.CreatedAt, correlationId).ToOutboxMessage(),
+            cancellationToken);
 
         await uow.IdempotencyKeys.CompleteAsync(caller.CustomerId, Operation, idempotencyKey, 201,
             TransferOutcomeSerializer.Serialize(receipt), transactionId, cancellationToken);

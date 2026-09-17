@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NovaWallet.Application.Abstractions;
 using NovaWallet.Infrastructure.Migrations;
+using NovaWallet.Infrastructure.Outbox;
 using NovaWallet.Infrastructure.Persistence;
 using NovaWallet.Infrastructure.Persistence.Ledger;
 
@@ -35,6 +36,11 @@ public static class DependencyInjection
         services.AddSingleton<IStatementReader, StatementReader>();
         services.AddSingleton<ILedgerUnitOfWorkFactory, LedgerUnitOfWorkFactory>();
         services.AddSingleton<DatabaseMigrator>();
+
+        services.Configure<OutboxOptions>(configuration.GetSection(OutboxOptions.SectionName));
+        services.AddSingleton<IEventPublisher, LoggingEventPublisher>();
+        services.AddSingleton<IOutboxProcessor, OutboxProcessor>();
+        services.AddHostedService<OutboxRelayService>();
 
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("postgres", tags: [ReadyTag]);

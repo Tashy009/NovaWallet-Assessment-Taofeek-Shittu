@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using NovaWallet.Application.Abstractions;
 using NovaWallet.Application.Common;
 using NovaWallet.Application.Transfers;
@@ -58,6 +59,7 @@ public class TransferServiceTests
         Assert.False(uow.Committed);
         Assert.True(uow.Disposed);
         Assert.Empty(uow.JournalWrites);
+        Assert.Empty(uow.OutboxWrites);
     }
 
     [Fact]
@@ -80,6 +82,33 @@ public class TransferServiceTests
         Assert.True(uow.Committed);
         Assert.False(uow.BalanceMutated);
         Assert.Empty(uow.JournalWrites);
+        Assert.Empty(uow.OutboxWrites);
+    }
+
+    [Fact]
+    public async Task Successful_transfer_writes_exactly_one_transfer_completed_event_before_commit()
+    {
+        var uow = new FakeUnitOfWork
+        {
+            LockedWallets =
+            [
+                new LockedWallet(Source, Alice.CustomerId, 10_000, 50_000_000, "ACTIVE"),
+                new LockedWallet(Destination, "cust-bob", 0, 50_000_000, "ACTIVE"),
+            ],
+            DebitResult = 9_000,
+        };
+        var service = NewService(new FakeUnitOfWorkFactory(uow));
+
+        var result = await service.TransferAsync(Alice, new TransferCommand(Source, Destination, 1_000, "NGN", "rent"), "key-5", "corr-5", default);
+
+        var message = Assert.Single(uow.OutboxWrites);
+        Assert.Equal(TransferCompletedEvent.EventType, message.EventType);
+        Assert.Equal(result.Value.Receipt!.TransactionId, message.AggregateId);
+        Assert.True(uow.OutboxWrittenBeforeCommit);
+        Assert.Contains("\"amountKobo\":1000", message.Payload);
+        Assert.Contains("\"correlationId\":\"corr-5\"", message.Payload);
+        Assert.DoesNotContain("rent", message.Payload);
+        Assert.DoesNotContain("balance", message.Payload, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -95,7 +124,7 @@ public class TransferServiceTests
     }
 
     private static TransferService NewService(ILedgerUnitOfWorkFactory factory) =>
-        new(factory, new ConcurrencyRetryPolicy(), TimeProvider.System);
+        new(factory, new ConcurrencyRetryPolicy(), TimeProvider.System, NullLogger<TransferService>.Instance);
 
     private sealed class FakeUnitOfWorkFactory(FakeUnitOfWork uow) : ILedgerUnitOfWorkFactory
     {
@@ -112,8 +141,21 @@ public class TransferServiceTests
         }
     }
 
-    private sealed class FakeUnitOfWork : ILedgerUnitOfWork, IWalletBalances, IIdempotencyKeys, IDailyOutboundTotals, ILedgerJournal
+    private sealed class FakeUnitOfWork : ILedgerUnitOfWork, IWalletBalances, IIdempotencyKeys, IDailyOutboundTotals, ILedgerJournal, IOutbox
     {
+        public List<OutboxMessage> OutboxWrites { get; } = [];
+
+        public bool OutboxWrittenBeforeCommit { get; private set; }
+
+        public IOutbox Outbox => this;
+
+        public Task AddAsync(OutboxMessage message, CancellationToken cancellationToken)
+        {
+            OutboxWrites.Add(message);
+            OutboxWrittenBeforeCommit = !Committed;
+            return Task.CompletedTask;
+        }
+
         public StoredIdempotencyResult? PreviousOutcome { get; init; }
 
         public IReadOnlyList<LockedWallet> LockedWallets { get; init; } = [];

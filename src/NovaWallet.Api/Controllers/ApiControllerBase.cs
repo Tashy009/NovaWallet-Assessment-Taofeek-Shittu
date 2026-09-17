@@ -16,10 +16,11 @@ public abstract class ApiControllerBase : ControllerBase
     protected Caller CurrentCaller => User.ToCaller();
 
     protected string CorrelationId => CorrelationIdMiddleware.Get(HttpContext);
-
+// Returns a ProblemDetails response for the given AppError, with the appropriate HTTP status code and error details.
     protected ObjectResult ErrorResult(AppError error)
     {
         var status = Errors.StatusCode(error.Kind);
+        RequestLogEnricher.SetErrorCode(HttpContext, error.Code);
 
         var type = $"urn:novawallet:error:{error.Code}";
 

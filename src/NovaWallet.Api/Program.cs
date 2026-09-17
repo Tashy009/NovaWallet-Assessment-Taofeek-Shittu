@@ -55,7 +55,7 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "NovaWallet Ledger Service",
         Version = "v1",
-        Description = "Wallet ledger for FirstBank NovaPay. All monetary amounts are integers in kobo (1 NGN = 100 kobo).",
+        Description = "Wallet ledger service for NovaWallet. All monetary amounts are integers in kobo (1 NGN = 100 kobo).",
     });
 
     var bearer = new OpenApiSecurityScheme
@@ -74,7 +74,7 @@ var app = builder.Build();
 // Order matters: correlation id wraps everything, and request logging sits outside the exception handler
 // so the logged status is the one the client actually received.
 app.UseMiddleware<CorrelationIdMiddleware>();
-app.UseSerilogRequestLogging();
+app.UseSerilogRequestLogging(options => options.EnrichDiagnosticContext = RequestLogEnricher.Enrich);
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
