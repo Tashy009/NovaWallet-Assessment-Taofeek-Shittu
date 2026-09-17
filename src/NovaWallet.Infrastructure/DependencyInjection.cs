@@ -32,6 +32,7 @@ public static class DependencyInjection
 
         services.AddSingleton<IWalletStore, WalletStore>();
         services.AddSingleton<ILedgerReader, LedgerReader>();
+        services.AddSingleton<IStatementReader, StatementReader>();
         services.AddSingleton<ILedgerUnitOfWorkFactory, LedgerUnitOfWorkFactory>();
         services.AddSingleton<DatabaseMigrator>();
 

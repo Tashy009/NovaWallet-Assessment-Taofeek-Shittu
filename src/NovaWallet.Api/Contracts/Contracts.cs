@@ -41,6 +41,20 @@ public sealed record TransferResponse(
     DateOnly BusinessDate,
     DateTimeOffset CreatedAt);
 
+public sealed record StatementItemResponse(
+    Guid TransactionId,
+    string Type,
+    string Direction,
+    string Currency,
+    long AmountKobo,
+    long BalanceAfterKobo,
+    Guid? CounterpartyWalletId,
+    string? ExternalReference,
+    string? Narration,
+    DateTimeOffset CreatedAt);
+
+public sealed record StatementResponse(Guid WalletId, IReadOnlyList<StatementItemResponse> Items, string? NextCursor);
+
 public sealed record DevTokenRequest(string? CustomerId, string[]? Scopes);
 
 public sealed record DevTokenResponse(string AccessToken, string TokenType, DateTimeOffset ExpiresAt);
