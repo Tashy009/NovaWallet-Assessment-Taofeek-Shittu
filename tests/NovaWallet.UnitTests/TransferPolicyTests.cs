@@ -7,6 +7,7 @@ public class TransferPolicyTests
 {
     private const long Limit = 50_000_000;
 
+    // Transfer policy: funds are checked before the daily limit, with exact boundaries.
     [Theory]
     [InlineData(10_000, 0, 10_000, TransferDecision.Allowed)]
     [InlineData(10_000, 0, 10_001, TransferDecision.InsufficientFunds)]
@@ -20,6 +21,7 @@ public class TransferPolicyTests
         Assert.Equal(expected, TransferPolicy.Evaluate(balance, spentToday, amount, Limit));
     }
 
+    // T4/T5: the policy rejects non-positive amounts.
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -34,6 +36,7 @@ public class RequestHasherTests
     private static readonly Guid Source = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid Destination = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
+    // Idempotency: an identical payload produces the same request hash.
     [Fact]
     public void Same_payload_produces_same_hash()
     {
@@ -42,6 +45,7 @@ public class RequestHasherTests
             RequestHasher.Transfer(Source, Destination, 1_000, "NGN", "rent"));
     }
 
+    // Idempotency: changing any field changes the request hash.
     [Fact]
     public void Any_field_change_produces_a_different_hash()
     {

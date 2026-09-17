@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NovaWallet.Api.Auth;
 
@@ -21,10 +22,13 @@ public sealed class ApiFixture : IAsyncLifetime
 
     public static string NewCustomerId() => $"cust-{Guid.NewGuid():N}";
 
-    public HttpClient CreateClient(string customerId, params string[] scopes)
+    public HttpClient CreateClient(string customerId, params string[] scopes) => CreateClientFor(Factory, customerId, scopes);
+
+    // Client for a derived host (WithWebHostBuilder) that shares this fixture's database and signing key.
+    public static HttpClient CreateClientFor(WebApplicationFactory<Program> host, string customerId, params string[] scopes)
     {
-        var (token, _) = Factory.Services.GetRequiredService<DevTokenIssuer>().Issue(customerId, scopes);
-        var client = Factory.CreateClient();
+        var (token, _) = host.Services.GetRequiredService<DevTokenIssuer>().Issue(customerId, scopes);
+        var client = host.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return client;
     }

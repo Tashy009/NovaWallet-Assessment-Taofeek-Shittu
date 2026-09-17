@@ -11,6 +11,7 @@ public class DailyLimitTests(ApiFixture fixture)
 {
     private const long DailyLimit = 50_000_000;
 
+    // DL2/DL3: transfers adding up to exactly the limit succeed and one more kobo is rejected.
     [Fact]
     public async Task Transfers_up_to_exactly_the_limit_succeed_and_one_more_kobo_is_rejected()
     {
@@ -29,6 +30,7 @@ public class DailyLimitTests(ApiFixture fixture)
         Assert.Equal(30_000_000, await GetBalanceAsync(sender, source));
     }
 
+    // DL4: a transfer that would cross the limit is rejected in full.
     [Fact]
     public async Task Transfer_that_would_cross_the_limit_is_rejected_whole()
     {
@@ -43,6 +45,7 @@ public class DailyLimitTests(ApiFixture fixture)
         Assert.Equal(50_000_000, await GetBalanceAsync(sender, source));
     }
 
+    // Concurrency: parallel transfers never push the daily total past the limit.
     [Fact]
     public async Task Concurrent_transfers_never_exceed_the_daily_limit()
     {
@@ -62,6 +65,7 @@ public class DailyLimitTests(ApiFixture fixture)
         await AssertWalletLedgerConsistentAsync(fixture.Database, source);
     }
 
+    // Midnight WAT: the limit resets at 00:00 Africa/Lagos, not at UTC midnight.
     [Fact]
     public async Task Limit_resets_at_midnight_africa_lagos_not_utc()
     {
@@ -84,6 +88,37 @@ public class DailyLimitTests(ApiFixture fixture)
             fixture.Clock.FixedUtcNow = null;
         }
 
+        Assert.Equal(20_000_000, await GetBalanceAsync(sender, source));
+    }
+
+    // DL1: a single transfer of exactly the daily limit succeeds.
+    [Fact]
+    public async Task Single_transfer_of_exactly_the_limit_succeeds()
+    {
+        var (sender, source) = await CreateFundedWalletAsync(fixture, DailyLimit);
+        var (_, destination) = await CreateFundedWalletAsync(fixture, 0);
+
+        var response = await TransferAsync(sender, source, destination, DailyLimit);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(0, await GetBalanceAsync(sender, source));
+    }
+
+    // DL5: a transfer rejected for insufficient funds does not use up any of the daily limit.
+    [Fact]
+    public async Task Failed_transfer_does_not_consume_the_daily_limit()
+    {
+        var (sender, source) = await CreateFundedWalletAsync(fixture, 30_000_000);
+        var (_, destination) = await CreateFundedWalletAsync(fixture, 0);
+        using var settlement = fixture.CreateSettlementClient();
+
+        var failed = await TransferAsync(sender, source, destination, 40_000_000);
+        (await settlement.PostAsJsonAsync($"/api/v1/wallets/{source}/credits",
+            new NovaWallet.Api.Contracts.CreditWalletRequest(40_000_000, $"NIP-{Guid.NewGuid():N}", null))).EnsureSuccessStatusCode();
+        var fullLimit = await TransferAsync(sender, source, destination, DailyLimit);
+
+        Assert.Equal("insufficient_funds", await ErrorCodeAsync(failed));
+        Assert.Equal(HttpStatusCode.Created, fullLimit.StatusCode);
         Assert.Equal(20_000_000, await GetBalanceAsync(sender, source));
     }
 }

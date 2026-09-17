@@ -11,6 +11,7 @@ namespace NovaWallet.IntegrationTests;
 [Collection(ApiCollection.Name)]
 public class CreditTests(ApiFixture fixture)
 {
+    // C1/B2: a valid credit raises the balance with one transaction, one entry and one audit record.
     [Fact]
     public async Task Valid_credit_returns_201_and_increases_balance()
     {
@@ -24,13 +25,20 @@ public class CreditTests(ApiFixture fixture)
         Assert.Equal(250_000, receipt!.AmountKobo);
         Assert.Equal(250_000, receipt.BalanceAfterKobo);
         Assert.Equal(250_000, await LedgerAssertions.GetBalanceAsync(owner, walletId));
+        Assert.Equal(1, await LedgerAssertions.CountAsync(fixture.Database,
+            "SELECT count(*) FROM ledger_entries WHERE transaction_id = @id", new { id = receipt.TransactionId }));
+        Assert.Equal(1, await LedgerAssertions.CountAsync(fixture.Database,
+            "SELECT count(*) FROM audit_log WHERE transaction_id = @id AND action = 'WALLET_CREDITED'", new { id = receipt.TransactionId }));
         await LedgerAssertions.AssertWalletLedgerConsistentAsync(fixture.Database, walletId);
     }
 
+    // C2/C3/C5: zero, negative and out-of-range amounts are rejected and nothing changes.
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
     [InlineData(1_000_000_000_001)]
+    [InlineData(long.MaxValue)]
+    [InlineData(long.MinValue)]
     public async Task Invalid_amount_returns_400_and_changes_nothing(long amountKobo)
     {
         var (owner, walletId) = await NewWalletAsync();
@@ -44,10 +52,12 @@ public class CreditTests(ApiFixture fixture)
         Assert.Equal(0, await LedgerAssertions.GetBalanceAsync(owner, walletId));
     }
 
+    // C4/C5: decimal, string, overflowing, unknown-field and malformed payloads are rejected.
     [Theory]
     [InlineData("""{"amountKobo": 100.5, "externalReference": "NIP-1"}""")]
     [InlineData("""{"amountKobo": "100", "externalReference": "NIP-1"}""")]
     [InlineData("""{"amountKobo": 100, "externalReference": "NIP-1", "currency": "USD"}""")]
+    [InlineData("""{"amountKobo": 9223372036854775808, "externalReference": "NIP-1"}""")]
     [InlineData("""{"amountKobo": 100}""")]
     [InlineData("not json")]
     public async Task Malformed_or_non_integer_payload_returns_400(string body)
@@ -61,6 +71,7 @@ public class CreditTests(ApiFixture fixture)
         Assert.Equal(0, await LedgerAssertions.GetBalanceAsync(owner, walletId));
     }
 
+    // C8: a customer without ledger:credit cannot credit, even their own wallet.
     [Fact]
     public async Task Customer_without_credit_scope_cannot_credit_even_own_wallet()
     {
@@ -72,6 +83,7 @@ public class CreditTests(ApiFixture fixture)
         Assert.Equal(0, await LedgerAssertions.GetBalanceAsync(owner, walletId));
     }
 
+    // C7: crediting a nonexistent wallet returns 404 and writes nothing.
     [Fact]
     public async Task Credit_to_unknown_wallet_returns_404_and_writes_nothing()
     {
@@ -86,6 +98,7 @@ public class CreditTests(ApiFixture fixture)
             "SELECT count(*) FROM ledger_transactions WHERE external_reference = @reference", new { reference }));
     }
 
+    // CI1: replaying the same reference and payload returns the original receipt without crediting twice.
     [Fact]
     public async Task Replaying_same_reference_and_payload_returns_original_receipt_without_double_credit()
     {
@@ -105,6 +118,7 @@ public class CreditTests(ApiFixture fixture)
         await LedgerAssertions.AssertWalletLedgerConsistentAsync(fixture.Database, walletId);
     }
 
+    // CI2: reusing a reference with a different amount is rejected and nothing changes.
     [Fact]
     public async Task Reusing_reference_with_different_amount_returns_409_and_changes_nothing()
     {
@@ -121,6 +135,7 @@ public class CreditTests(ApiFixture fixture)
         Assert.Equal(10_000, await LedgerAssertions.GetBalanceAsync(owner, walletId));
     }
 
+    // Concurrency: parallel credits with different references are all applied with no lost updates.
     [Fact]
     public async Task Concurrent_distinct_credits_are_all_applied_with_no_lost_updates()
     {
@@ -137,10 +152,11 @@ public class CreditTests(ApiFixture fixture)
         await LedgerAssertions.AssertWalletLedgerConsistentAsync(fixture.Database, walletId);
     }
 
+    // CI4: 100 concurrent duplicates of one reference credit exactly once.
     [Fact]
     public async Task Concurrent_duplicates_of_one_reference_credit_exactly_once()
     {
-        const int attempts = 20;
+        const int attempts = 100;
         var (owner, walletId) = await NewWalletAsync();
         using var settlement = fixture.CreateSettlementClient();
         var request = new CreditWalletRequest(7_500, NewReference(), null);
@@ -154,6 +170,68 @@ public class CreditTests(ApiFixture fixture)
         Assert.Single(transactionIds.Distinct());
         Assert.Equal(7_500, await LedgerAssertions.GetBalanceAsync(owner, walletId));
         await LedgerAssertions.AssertWalletLedgerConsistentAsync(fixture.Database, walletId);
+    }
+
+    // C6: a frozen wallet cannot be credited.
+    [Fact]
+    public async Task Credit_to_frozen_wallet_returns_422_and_changes_nothing()
+    {
+        var (owner, walletId) = await NewWalletAsync();
+        await LedgerAssertions.FreezeWalletAsync(fixture.Database, walletId);
+        using var settlement = fixture.CreateSettlementClient();
+
+        var response = await settlement.PostAsJsonAsync(CreditsUrl(walletId), new CreditWalletRequest(1_000, NewReference(), null));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal("wallet_not_active", await LedgerAssertions.ErrorCodeAsync(response));
+        Assert.Equal(0, await LedgerAssertions.GetBalanceAsync(owner, walletId));
+    }
+
+    // CI3: reusing an external reference for another wallet or with another narration is rejected; neither wallet changes.
+    [Theory]
+    [InlineData("wallet")]
+    [InlineData("narration")]
+    public async Task Reusing_reference_with_different_wallet_or_narration_returns_409(string changed)
+    {
+        var (ownerA, walletA) = await NewWalletAsync();
+        var (ownerB, walletB) = await NewWalletAsync();
+        using var settlement = fixture.CreateSettlementClient();
+        var reference = NewReference();
+        (await settlement.PostAsJsonAsync(CreditsUrl(walletA), new CreditWalletRequest(10_000, reference, "Salary"))).EnsureSuccessStatusCode();
+
+        var response = changed == "wallet"
+            ? await settlement.PostAsJsonAsync(CreditsUrl(walletB), new CreditWalletRequest(10_000, reference, "Salary"))
+            : await settlement.PostAsJsonAsync(CreditsUrl(walletA), new CreditWalletRequest(10_000, reference, "Bonus"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("external_reference_conflict", await LedgerAssertions.ErrorCodeAsync(response));
+        Assert.Equal(10_000, await LedgerAssertions.GetBalanceAsync(ownerA, walletA));
+        Assert.Equal(0, await LedgerAssertions.GetBalanceAsync(ownerB, walletB));
+    }
+
+    // NIP duplication: the external reference, not the Idempotency-Key header, decides whether a credit is a duplicate.
+    [Fact]
+    public async Task Same_nip_reference_with_different_idempotency_keys_credits_once()
+    {
+        var (owner, walletId) = await NewWalletAsync();
+        using var settlement = fixture.CreateSettlementClient();
+        var body = new CreditWalletRequest(10_000, NewReference(), null);
+
+        var first = await PostCreditWithKeyAsync(settlement, walletId, body, "ABC");
+        var second = await PostCreditWithKeyAsync(settlement, walletId, body, "XYZ");
+
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
+        Assert.Equal("true", second.Headers.GetValues("Idempotent-Replayed").Single());
+        Assert.Equal(10_000, await LedgerAssertions.GetBalanceAsync(owner, walletId));
+        await LedgerAssertions.AssertWalletLedgerConsistentAsync(fixture.Database, walletId);
+    }
+
+    private static Task<HttpResponseMessage> PostCreditWithKeyAsync(HttpClient client, Guid walletId, CreditWalletRequest body, string key)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, CreditsUrl(walletId)) { Content = JsonContent.Create(body) };
+        request.Headers.Add("Idempotency-Key", key);
+        return client.SendAsync(request);
     }
 
     private async Task<(HttpClient Owner, Guid WalletId)> NewWalletAsync()

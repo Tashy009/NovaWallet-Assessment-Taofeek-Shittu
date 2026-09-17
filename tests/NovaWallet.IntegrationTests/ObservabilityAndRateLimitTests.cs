@@ -15,6 +15,7 @@ namespace NovaWallet.IntegrationTests;
 [Collection(ApiCollection.Name)]
 public class ObservabilityAndRateLimitTests(ApiFixture fixture)
 {
+    // Audit: the caller's correlation id is echoed and stored on ledger and audit rows.
     [Fact]
     public async Task Supplied_correlation_id_is_echoed_and_recorded_on_ledger_and_audit_rows()
     {
@@ -37,6 +38,7 @@ public class ObservabilityAndRateLimitTests(ApiFixture fixture)
             id => Assert.Equal(correlationId, id));
     }
 
+    // Logging security: missing or unsafe correlation ids are replaced, preventing log injection.
     [Theory]
     [InlineData("")]
     [InlineData("has spaces")]
@@ -55,6 +57,7 @@ public class ObservabilityAndRateLimitTests(ApiFixture fixture)
         Assert.Matches("^[A-Za-z0-9_.:-]{1,64}$", echoed);
     }
 
+    // Errors: problem details include the correlation id for support.
     [Fact]
     public async Task Problem_details_include_the_correlation_id()
     {
@@ -67,6 +70,7 @@ public class ObservabilityAndRateLimitTests(ApiFixture fixture)
         Assert.Equal("support-ticket-42", problem.GetProperty("correlationId").GetString());
     }
 
+    // Security: transfers are rate limited per customer with a 429 problem response.
     [Fact]
     public async Task Transfer_endpoint_is_rate_limited_per_customer_with_problem_details()
     {

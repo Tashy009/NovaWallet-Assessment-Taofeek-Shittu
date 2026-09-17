@@ -9,6 +9,7 @@ namespace NovaWallet.IntegrationTests;
 [Collection(ApiCollection.Name)]
 public class WalletTests(ApiFixture fixture)
 {
+    // W1: a new wallet returns 201 with zero balance, NGN and the token subject as owner.
     [Fact]
     public async Task Create_wallet_returns_201_with_zero_ngn_balance_owned_by_token_subject()
     {
@@ -28,6 +29,7 @@ public class WalletTests(ApiFixture fixture)
         Assert.Equal($"/api/v1/wallets/{wallet.WalletId}/balance", response.Headers.Location?.AbsolutePath);
     }
 
+    // B1: a new wallet's balance is zero.
     [Fact]
     public async Task Get_balance_of_new_wallet_is_zero()
     {
@@ -39,6 +41,7 @@ public class WalletTests(ApiFixture fixture)
         Assert.Equal(new BalanceResponse(walletId, "NGN", 0), balance);
     }
 
+    // W2: a second NGN wallet for the same customer returns 409 with the existing wallet id.
     [Fact]
     public async Task Second_wallet_for_same_customer_returns_409_with_existing_wallet_id()
     {
@@ -53,6 +56,7 @@ public class WalletTests(ApiFixture fixture)
         Assert.Equal(walletId, problem.GetProperty("walletId").GetGuid());
     }
 
+    // W2: concurrent creates for one customer produce exactly one wallet (unique constraint).
     [Fact]
     public async Task Concurrent_creates_for_same_customer_produce_exactly_one_wallet()
     {
@@ -65,6 +69,7 @@ public class WalletTests(ApiFixture fixture)
             r => Assert.Equal(HttpStatusCode.Conflict, r.StatusCode));
     }
 
+    // B5: a nonexistent wallet returns 404 problem details.
     [Fact]
     public async Task Unknown_wallet_returns_404_problem_details()
     {
@@ -76,6 +81,7 @@ public class WalletTests(ApiFixture fixture)
         Assert.Equal("wallet_not_found", (await ReadProblemAsync(response)).GetProperty("errorCode").GetString());
     }
 
+    // B4/IDOR: another customer's wallet is reported as not found.
     [Fact]
     public async Task Another_customers_wallet_is_reported_as_not_found()
     {
@@ -88,6 +94,7 @@ public class WalletTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    // W4/W5: missing or forged tokens are rejected with 401.
     [Fact]
     public async Task Requests_without_a_valid_token_are_rejected_with_401()
     {
@@ -99,6 +106,7 @@ public class WalletTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.Unauthorized, (await forged.PostAsync("/api/v1/wallets", null)).StatusCode);
     }
 
+    // Security: an oversized sub claim is rejected with 403 instead of a database error.
     [Fact]
     public async Task Validly_signed_token_with_oversized_subject_is_forbidden_not_a_server_error()
     {
@@ -109,6 +117,7 @@ public class WalletTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    // Input: a wallet id that is not a GUID never reaches the database.
     [Fact]
     public async Task Non_guid_wallet_id_returns_404()
     {
@@ -117,6 +126,23 @@ public class WalletTests(ApiFixture fixture)
         var response = await client.GetAsync("/api/v1/wallets/not-a-guid/balance");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    // W3: different customers each get their own wallet.
+    [Fact]
+    public async Task Different_customers_can_each_create_a_wallet()
+    {
+        using var customerA = fixture.CreateClient(ApiFixture.NewCustomerId());
+        using var customerB = fixture.CreateClient(ApiFixture.NewCustomerId());
+
+        var walletA = await customerA.PostAsync("/api/v1/wallets", content: null);
+        var walletB = await customerB.PostAsync("/api/v1/wallets", content: null);
+
+        Assert.Equal(HttpStatusCode.Created, walletA.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, walletB.StatusCode);
+        Assert.NotEqual(
+            (await walletA.Content.ReadFromJsonAsync<WalletResponse>())!.WalletId,
+            (await walletB.Content.ReadFromJsonAsync<WalletResponse>())!.WalletId);
     }
 
     private static async Task<JsonElement> ReadProblemAsync(HttpResponseMessage response)

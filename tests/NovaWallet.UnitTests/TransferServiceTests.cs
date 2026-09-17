@@ -11,6 +11,7 @@ public class TransferServiceTests
     private static readonly Guid Source = Guid.NewGuid();
     private static readonly Guid Destination = Guid.NewGuid();
 
+    // Validation: an invalid command is rejected before any database transaction starts.
     [Fact]
     public async Task Invalid_command_is_rejected_before_any_database_transaction_starts()
     {
@@ -23,6 +24,7 @@ public class TransferServiceTests
         Assert.Equal(0, factory.BeginCount);
     }
 
+    // Idempotency: a reused key with a different payload never locks wallets or commits.
     [Fact]
     public async Task Reused_key_with_different_payload_never_locks_wallets_or_commits()
     {
@@ -39,6 +41,7 @@ public class TransferServiceTests
         Assert.False(uow.Committed);
     }
 
+    // DB1: a guarded debit that affects no rows aborts without committing.
     [Fact]
     public async Task Guarded_debit_affecting_no_rows_aborts_without_commit()
     {
@@ -62,6 +65,7 @@ public class TransferServiceTests
         Assert.Empty(uow.OutboxWrites);
     }
 
+    // T3: insufficient funds stores the rejection without touching balances.
     [Fact]
     public async Task Insufficient_funds_stores_the_rejection_and_commits_without_touching_balances()
     {
@@ -85,6 +89,7 @@ public class TransferServiceTests
         Assert.Empty(uow.OutboxWrites);
     }
 
+    // Outbox: a successful transfer writes one event inside the transaction, before commit.
     [Fact]
     public async Task Successful_transfer_writes_exactly_one_transfer_completed_event_before_commit()
     {
@@ -111,6 +116,7 @@ public class TransferServiceTests
         Assert.DoesNotContain("balance", message.Payload, StringComparison.OrdinalIgnoreCase);
     }
 
+    // Concurrency: a transient conflict retries the whole transaction.
     [Fact]
     public async Task Transient_database_conflict_retries_the_whole_transaction()
     {

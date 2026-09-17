@@ -7,6 +7,7 @@ public class ConcurrencyRetryPolicyTests
 {
     private readonly ConcurrencyRetryPolicy _policy = new();
 
+    // Concurrency: transient database conflicts are retried until they succeed.
     [Fact]
     public async Task Retries_transient_failures_and_returns_the_eventual_result()
     {
@@ -22,6 +23,7 @@ public class ConcurrencyRetryPolicyTests
         Assert.Equal(3, attempts);
     }
 
+    // Concurrency: retries stop after the maximum attempts and surface the failure.
     [Fact]
     public async Task Gives_up_after_max_attempts_and_surfaces_the_transient_failure()
     {
@@ -36,6 +38,7 @@ public class ConcurrencyRetryPolicyTests
         Assert.Equal(ConcurrencyRetryPolicy.MaxAttempts, attempts);
     }
 
+    // Concurrency: non-transient failures are not retried.
     [Fact]
     public async Task Does_not_retry_non_transient_failures()
     {
